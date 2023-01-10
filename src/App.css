@@ -1,0 +1,7 @@
+.centered-vertical-rl {
+    position: relative;
+    left: 0;
+    top: 0;
+    transform:  translateY(-200%) rotate(90deg);
+  }
+  
