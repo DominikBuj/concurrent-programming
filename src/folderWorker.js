@@ -1,25 +1,18 @@
 
-let progress = 0;
-
-function upload() {
+function upload(progress, speed) {
     if (progress < 100) {
         ++progress;
         postMessage(progress);
-        setTimeout(upload, 100);
-    } else progress = 0;
-};
+        setTimeout(upload.bind(null, progress, speed), speed);
+    }
+}
 
 onmessage = (e) => {
 
-    // const data = e.data.data;
-    // const folderIndex = e.data.folderIndex;
-    // const fileIndex = e.data.fileIndex;
+    const size = e.data;
+    const progress = 0;
+    const speed = ((size - 0.01) / (1 - 0.01)) * (75 - 25) + 25;
 
-    // if (folderIndex == null || fileIndex == null) return;
+    upload(progress, speed);
 
-    // const folder = data.folders[folderIndex];
-    // const file = data.clients[fileIndex[0]].files[fileIndex[1]];
-
-    upload();
-
-};
+}

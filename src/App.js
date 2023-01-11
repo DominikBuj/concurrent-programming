@@ -1,9 +1,8 @@
 /* eslint-disable react-hooks/exhaustive-deps */
-import { useEffect, useState } from 'react';
+import { useState, useEffect } from 'react';
 import './App.css';
 
-const fileSizes = ['h-12', 'h-24', 'h-36'];
-// const randomColorStyle = () => { backgroundColor: `rgb(${random(0, 255)}, ${random(0, 255)}, ${random(0, 255)})` };
+let started = false;
 
 const random = (min, max) => Math.floor(Math.random() * (Math.floor(max) - Math.ceil(min) + 1) + Math.ceil(min));
 
@@ -12,30 +11,25 @@ export default function App() {
   const [data, setData] = useState({
     folders: [...Array(5)].map(() => {return {
       thread: new Worker(new URL('./folderWorker.js', import.meta.url)),
-      uploadingFileIndex: null
+      clientIndex: null,
+      fileIndex: null
     }}),
-    clients: [...Array(random(1, 10))].map(() => {return {
-        files: [...Array(random(1, 5))].map(() => {return {
-            size: random(1, 3),
-            uploadingFolderIndex: null
+    clients: [...Array(10)].map(() => {return {
+        creationTime: Date.now(),
+        files: [...Array(5)].map(() => {return {
+            size: random(1, 100) * 0.01,
+            folderIndex: null
         }}).sort((a, b) => (a.size > b.size) ? 1 : (-1)).reverse()
     }})
   });
 
-  
-
-  useEffect(() => {
-
-    upload();
-
-    arbiter();
-
-  }, []);
+  useEffect(() => upload(), []);
 
   useEffect(() => drawConnections());
 
-  const getFolderObject = (folderIndex) => document.getElementById('folders-container')?.children[folderIndex]?.firstElementChild;
-  const getFileObject = (fileIndex) => document.getElementById('clients-container')?.children[fileIndex[0]]?.firstElementChild?.children[fileIndex[1] + 1];
+  const getFilePixelSize = (fileSize) => (fileSize * 100) + 44;
+  const getFolderObject = (folderIndex) => document.getElementById('folders-container').children[folderIndex].firstElementChild;
+  const getFileObject = (clientIndex, fileIndex) => document.getElementById('clients-container').children[clientIndex]?.firstElementChild.children[fileIndex + 1];
 
   function upload() {
 
@@ -47,31 +41,32 @@ export default function App() {
 
       if (upload >= 100) {
  
-          folderObject.innerHTML = folderIndex + 1;
+          folderObject.innerHTML = null;
 
           const dataCopy = data;
-          const clientIndex = folder.uploadingFileIndex[0];
-          const fileIndex = folder.uploadingFileIndex[1];
+          const clientIndex = folder.clientIndex;
+          const fileIndex = folder.fileIndex;
 
           dataCopy.clients[clientIndex].files.splice(fileIndex, 1);
           for (let j = fileIndex; j < dataCopy.clients[clientIndex].files.length; ++j) {
-            if (dataCopy.clients[clientIndex].files[j].uploadingFolderIndex !== null) {
-              dataCopy.folders[dataCopy.clients[clientIndex].files[j].uploadingFolderIndex].uploadingFileIndex[1] = j;
+            if (dataCopy.clients[clientIndex].files[j].folderIndex !== null) {
+              dataCopy.folders[dataCopy.clients[clientIndex].files[j].folderIndex].fileIndex = j;
             }
           }
 
           if (dataCopy.clients[clientIndex].files.length <= 0) {
             dataCopy.clients.splice(clientIndex, 1);
             for (let i = clientIndex; i < dataCopy.clients.length; ++i) {
-              for (let j = 0; j < dataCopy.clients[i].files.length; ++ j) {
-                if (dataCopy.clients[i].files[j].uploadingFolderIndex !== null) {
-                  dataCopy.folders[dataCopy.clients[i].files[j].uploadingFolderIndex].uploadingFileIndex[0] = i;
+              for (let j = 0; j < dataCopy.clients[i].files.length; ++j) {
+                if (dataCopy.clients[i].files[j].folderIndex !== null) {
+                  dataCopy.folders[dataCopy.clients[i].files[j].folderIndex].clientIndex = i;
                 }
               }
             }
           }
 
-          dataCopy.folders[folderIndex].uploadingFileIndex = null;
+          dataCopy.folders[folderIndex].clientIndex = null;
+          dataCopy.folders[folderIndex].fileIndex = null;
 
           setData({...dataCopy});
 
@@ -91,9 +86,9 @@ export default function App() {
     canvasContext.lineWidth = 5;
 
     data.folders.forEach((folder, folderIndex) => {
-      if (folder.uploadingFileIndex === null) return;
+      if (folder.clientIndex === null || folder.fileIndex === null) return;
       const folderRectangle = getFolderObject(folderIndex).getBoundingClientRect();
-      const fileRectangle = getFileObject(folder.uploadingFileIndex).getBoundingClientRect();
+      const fileRectangle = getFileObject(folder.clientIndex, folder.fileIndex).getBoundingClientRect();
       canvasContext.beginPath();
       canvasContext.moveTo(folderRectangle.left + folderRectangle.width / 2, folderRectangle.bottom - 2);
       canvasContext.lineTo(fileRectangle.left + fileRectangle.width / 2, fileRectangle.top + 2);
@@ -105,58 +100,82 @@ export default function App() {
   function getFreeFolderIndex() {
     for (let i = 0; i < data.folders.length; ++i) {
         const folder = data.folders[i];
-        if (folder.uploadingFileIndex === null) return i;
+        if (folder.clientIndex === null || folder.fileIndex === null) return i;
     }
     return null;
   };
 
-  function getBestFileIndex() {
+  function existsFreeFile() {
+    for (let i = 0; i < data.clients.length; ++i) {
+      const client = data.clients[i];
+      for (let j = 0; j < client.files.length; ++j) {
+          const file = client.files[j];
+          if (file.folderIndex === null) return true;
+      }
+    }
+    return false;
+  }
+
+  function getFilePriority(clientIndex, fileIndex) {
+    
+    const client = data.clients[clientIndex];
+    const file = client.files[fileIndex];
+    
+    const q = data.clients.length;
+    const t = (Date.now() - client.creationTime) / 10000.0;
+    const s = file.size;
+    
+    return ((t ** Math.E) / q) + ((1 / s) * q);
+  
+  }
+
+  function getBestFileCombinedIndex() {
+
+      let possibleFiles = [];
+
       for (let i = 0; i < data.clients.length; ++i) {
           const client = data.clients[i];
-          for (let j = 0; j < client.files.length; ++j) {
+          for (let j = client.files.length - 1; j >= 0; --j) {
               const file = client.files[j];
-              if (file.uploadingFolderIndex === null) return [i, j];
+              if (file.folderIndex === null) {
+                const combinedIndex = [i, j];
+                possibleFiles.push({
+                  combinedIndex: combinedIndex,
+                  priority: getFilePriority(i, j)
+                });
+                break;
+              }
           }
       }
-      return null;
-  };
 
-  // let arbiterRunning = false;
+      return possibleFiles.sort((a, b) => (a.priority > b.priority) ? 1 : (-1)).pop().combinedIndex;
+
+  };
 
   function arbiter() {
 
-      // if (arbiterRunning) return;
-      // console.log('run arbiter');
-      // arbiterRunning = true;
+      if (!started) {
+        started = true;
+        const dataCopy = data;
+        dataCopy.clients.forEach(client => client.creationTime = Date.now());
+        setData({...dataCopy});
+      }
 
       const folderIndex = getFreeFolderIndex();
-      const fileIndex = getBestFileIndex();
-
-      // console.log(folderIndex);
-      // console.log(fileIndex);
-
-      if (folderIndex == null || fileIndex == null) {
-        setTimeout(arbiter, 2000);
+      if (folderIndex === null || !existsFreeFile()) {
+        setTimeout(arbiter, 100);
         return;
       }
 
-      const folder = data.folders[folderIndex];
-      const file = data.clients[fileIndex[0]].files[fileIndex[1]];
+      const [clientIndex, fileIndex] = getBestFileCombinedIndex();
 
-      // console.log(folder);
-      // console.log(file);
-
-      // folder.thread.postMessage(JSON.parse(JSON.stringify({ data: data, folderIndex: folderIndex, fileIndex: fileIndex })));
-      folder.thread.postMessage(null);
+      data.folders[folderIndex].thread.postMessage(data.clients[clientIndex].files[fileIndex].size);
 
       const dataCopy = data;
-      dataCopy.folders[folderIndex].uploadingFileIndex = fileIndex;
-      dataCopy.clients[fileIndex[0]].files[fileIndex[1]].uploadingFolderIndex = folderIndex;
+      dataCopy.folders[folderIndex].clientIndex = clientIndex;
+      dataCopy.folders[folderIndex].fileIndex = fileIndex;
+      dataCopy.clients[clientIndex].files[fileIndex].folderIndex = folderIndex;
       setData({...dataCopy});
-
-      // arbiterRunning = false;
-
-      // arbiter();
 
       setTimeout(arbiter, 100);
 
@@ -164,27 +183,38 @@ export default function App() {
 
   function generateClient() {
 
-    // const dataCopy = data;
-    // dataCopy.clients.splice(dataCopy.clients.length - 1, 1);
-    // setData({...dataCopy});
+    if (data.clients.length >= 10) return;
+
+    const dataCopy = data;
+    dataCopy.clients.push({
+      creationTime: Date.now(),
+      files: [...Array(random(1, 5))].map(() => {return {
+          size: random(1, 100) * 0.01,
+          folderIndex: null
+      }}).sort((a, b) => (a.size > b.size) ? 1 : (-1)).reverse()
+    });
+    setData({...dataCopy});
 
   };
 
   return (
     <>
-      <canvas id="canvas" className="absolute" width="100%" height="100%"></canvas>
-      <div className="grid grid-rows-3 bg-cyan-100">
-        <div id="folders-container" className="row-span-1 grid grid-cols-5">
-          {
-            [...data.folders].map((value, index) => (
-              <div className="flex justify-center items-center" key={index}>
-                <div className="bg-yellow-400 w-32 h-32 border-4 text-2xl font-bold border-black rounded text-center align-middle leading-[8rem]">{index + 1}</div>
-              </div>
-            ))
-          }
-        </div>
-        <div className="row-span-2 grid grid-cols-11">
-          <div id="clients-container" className="grid grid-cols-10 col-span-10">
+      <canvas id="canvas" className="fixed"></canvas>
+      <div className="grid grid-cols-5 bg-cyan-100">
+
+        <div className="col-span-4 grid grid-rows-3">
+
+          <div id="folders-container" className="grid grid-cols-5">
+            {
+              [...data.folders].map((value, index) => (
+                <div className="flex justify-center items-center" key={index}>
+                  <div className="bg-yellow-400 w-32 h-32 border-4 text-2xl font-bold border-black rounded text-center align-middle leading-[8rem]"></div>
+                </div>
+              ))
+            }
+          </div>
+          
+          <div id="clients-container" className="row-span-2 grid grid-cols-10">
             {
               [...data.clients].map((value, index) => (
                 <div className="flex justify-center mb-2" key={index}>
@@ -192,7 +222,7 @@ export default function App() {
                     <div className="h-12 text-2xl font-bold text-center leading-[3rem]">{index + 1}</div>
                     {
                       [...value.files].map((value, index) => (
-                        <div className={`${fileSizes[value.size - 1]} bg-blue-300 border-4 rounded border-black`} key={index}></div>
+                        <div className={'bg-blue-300 border-4 rounded border-black'} style={{height: `${getFilePixelSize(value.size)}px`}} key={index}></div>
                       ))
                     }
                   </div>
@@ -200,12 +230,18 @@ export default function App() {
               ))
             }
           </div>
-          <div className="w-16 my-4 mx-auto flex flex-col gap-4">
-            <button className="flex-auto bg-black hover:bg-blue-700 py-2 px-4 rounded z-10" onClick={generateClient}>
-              <p className="text-2xl text-white font-bold whitespace-nowrap centered-vertical-rl">Generate Client</p>
-            </button>
-          </div>
+
         </div>
+
+        <div className="border-l-4 border-slate-900 flex flex-col p-2 gap-2">
+          <button className="bg-black hover:bg-slate-800 py-2 px-4 rounded z-10" onClick={!started ? arbiter : null}>
+            <p className="text-2xl text-white font-bold">Start</p>
+          </button>
+          <button className="bg-black hover:bg-slate-800 py-2 px-4 rounded z-10" onClick={generateClient}>
+            <p className="text-2xl text-white font-bold">Generuj Klienta</p>
+          </button>
+        </div>
+
       </div>
     </>
   );
