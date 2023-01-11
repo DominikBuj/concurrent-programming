@@ -6,7 +6,14 @@ let started = false;
 
 const random = (min, max) => Math.floor(Math.random() * (Math.floor(max) - Math.ceil(min) + 1) + Math.ceil(min));
 
+const getFilePixelSize = (fileSize) => (fileSize * 100) + 44;
+
+const getFolderObject = (folderIndex) => document.getElementById('folders-container').children[folderIndex].firstElementChild;
+const getFileObject = (clientIndex, fileIndex) => document.getElementById('clients-container').children[clientIndex]?.firstElementChild.children[fileIndex + 1];
+
 export default function App() {
+
+  const [windowSize, setWindowSize] = useState({ width: window.innerWidth, height: window.innerHeight });
 
   const [data, setData] = useState({
     folders: [...Array(5)].map(() => {return {
@@ -14,24 +21,22 @@ export default function App() {
       clientIndex: null,
       fileIndex: null
     }}),
-    clients: [...Array(10)].map(() => {return {
+    clients: [...Array(20)].map(() => {return {
         creationTime: Date.now(),
-        files: [...Array(5)].map(() => {return {
+        files: [...Array(6)].map(() => {return {
             size: random(1, 100) * 0.01,
             folderIndex: null
         }}).sort((a, b) => (a.size > b.size) ? 1 : (-1)).reverse()
     }})
   });
 
-  useEffect(() => upload(), []);
+  useEffect(() => { handleResize(); handleUploads(); }, []);
 
-  useEffect(() => drawConnections());
+  useEffect(() => drawUploads());
 
-  const getFilePixelSize = (fileSize) => (fileSize * 100) + 44;
-  const getFolderObject = (folderIndex) => document.getElementById('folders-container').children[folderIndex].firstElementChild;
-  const getFileObject = (clientIndex, fileIndex) => document.getElementById('clients-container').children[clientIndex]?.firstElementChild.children[fileIndex + 1];
+  const handleResize = () => window.addEventListener('resize', () => setWindowSize({ width: window.innerWidth, height: window.innerHeight }));
 
-  function upload() {
+  function handleUploads() {
 
     data.folders.forEach((folder, folderIndex) => folder.thread.onmessage = (e) => {
 
@@ -76,7 +81,7 @@ export default function App() {
 
   };
 
-  function drawConnections() {
+  function drawUploads() {
 
     const canvas = document.getElementById('canvas');
     canvas.width = window.innerWidth;
@@ -152,7 +157,7 @@ export default function App() {
 
   };
 
-  function arbiter() {
+  function runArbiter() {
 
       if (!started) {
         started = true;
@@ -163,7 +168,7 @@ export default function App() {
 
       const folderIndex = getFreeFolderIndex();
       if (folderIndex === null || !existsFreeFile()) {
-        setTimeout(arbiter, 100);
+        setTimeout(runArbiter, 100);
         return;
       }
 
@@ -177,13 +182,13 @@ export default function App() {
       dataCopy.clients[clientIndex].files[fileIndex].folderIndex = folderIndex;
       setData({...dataCopy});
 
-      setTimeout(arbiter, 100);
+      setTimeout(runArbiter, 100);
 
   };
 
   function generateClient() {
 
-    if (data.clients.length >= 10) return;
+    if (data.clients.length >= 20) return;
 
     const dataCopy = data;
     dataCopy.clients.push({
@@ -199,7 +204,9 @@ export default function App() {
 
   return (
     <>
+
       <canvas id="canvas" className="fixed"></canvas>
+
       <div className="grid grid-cols-5 bg-cyan-100">
 
         <div className="col-span-4 grid grid-rows-3">
@@ -213,8 +220,8 @@ export default function App() {
               ))
             }
           </div>
-          
-          <div id="clients-container" className="row-span-2 grid grid-cols-10">
+
+          <div id="clients-container" className="row-span-2 grid grid-cols-[repeat(20,_1fr)]">
             {
               [...data.clients].map((value, index) => (
                 <div className="flex justify-center mb-2" key={index}>
@@ -222,7 +229,7 @@ export default function App() {
                     <div className="h-12 text-2xl font-bold text-center leading-[3rem]">{index + 1}</div>
                     {
                       [...value.files].map((value, index) => (
-                        <div className={'bg-blue-300 border-4 rounded border-black'} style={{height: `${getFilePixelSize(value.size)}px`}} key={index}></div>
+                        <div className="bg-blue-300 border-4 rounded border-black" style={{height: `${getFilePixelSize(value.size)}px`}} key={index}></div>
                       ))
                     }
                   </div>
@@ -234,15 +241,19 @@ export default function App() {
         </div>
 
         <div className="border-l-4 border-slate-900 flex flex-col p-2 gap-2">
-          <button className="bg-black hover:bg-slate-800 py-2 px-4 rounded z-10" onClick={!started ? arbiter : null}>
+
+          <button className="bg-black hover:bg-slate-800 py-2 px-4 rounded z-10" onClick={!started ? runArbiter : null}>
             <p className="text-2xl text-white font-bold">Start</p>
           </button>
+
           <button className="bg-black hover:bg-slate-800 py-2 px-4 rounded z-10" onClick={generateClient}>
             <p className="text-2xl text-white font-bold">Generuj Klienta</p>
           </button>
+
         </div>
 
       </div>
+
     </>
   );
 
